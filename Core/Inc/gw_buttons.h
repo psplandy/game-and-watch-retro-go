@@ -1,5 +1,5 @@
-#ifndef _BUTTONS_H_
-#define _BUTTONS_H_
+#ifndef _GW_BUTTONS_H_
+#define _GW_BUTTONS_H_
 
 #include <stdint.h>
 

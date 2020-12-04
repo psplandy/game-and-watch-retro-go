@@ -360,6 +360,7 @@ RCC.SRDPPRE=RCC_APB4_DIV2
 RCC.Tim2OutputFreq_Value=280000000
 RCC.DFSDMACLkFreq_Value=98304000
 PB15.Locked=true
+NVIC.LTDC_IRQn=true\:0\:0\:false\:false\:true\:true\:true
 LTDC.FBStartAdress_L0=0x24000000
 OCTOSPI1.ClockMode=HAL_OSPI_CLOCK_MODE_0
 CORTEX_M7.CPU_ICache=Disabled

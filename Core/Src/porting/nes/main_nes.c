@@ -26,6 +26,10 @@ typedef enum {
     DMA_TRANSFER_STATE_TC = 0x01,
 } dma_transfer_state_t;
 
+#ifndef GW_LCD_MODE_LUT8
+#error "Only supports LCD LUT8 mode."
+#endif
+
 static uint32_t audioBuffer[AUDIO_BUFFER_LENGTH];
 static uint32_t audio_mute;
 
@@ -60,6 +64,7 @@ static bool fullFrame = 0;
 static uint frameTime = 0;
 
 static bool autoload = false;
+static uint32_t active_framebuffer = 0;
 // TODO
 extern void store_save(uint8_t *data, size_t size);
 
@@ -104,6 +109,7 @@ void osd_setpalette(rgb_t *pal)
 
     // color 13 is "black". Makes for a nice border.
     memset(framebuffer1, 13, sizeof(framebuffer1));
+    memset(framebuffer2, 13, sizeof(framebuffer2));
 
     odroid_display_force_refresh();
 }
@@ -199,8 +205,27 @@ void osd_blitscreen(bitmap_t *bmp)
     // This takes less than 1ms
     for (int y = 0; y < bmp->height; y++) {
         uint8_t *row = bmp->line[y];
-        uint32_t *dest = &framebuffer1[WIDTH * y + hpad];
-        memcpy(dest, row, bmp->width);
+        if(active_framebuffer == 0) {
+            uint32_t *dest = &framebuffer1[WIDTH * y + hpad];
+            memcpy(dest, row, bmp->width);
+        } else {
+            uint32_t *dest = &framebuffer2[WIDTH * y + hpad];
+            memcpy(dest, row, bmp->width);
+        }
+    }
+    if(active_framebuffer == 0) {
+        active_framebuffer = 1;
+    } else {
+        active_framebuffer = 0;
+    }
+    HAL_LTDC_Reload(&hltdc, LTDC_RELOAD_VERTICAL_BLANKING);
+}
+
+void HAL_LTDC_ReloadEventCallback (LTDC_HandleTypeDef *hltdc) {
+    if(active_framebuffer == 0) {
+        HAL_LTDC_SetAddress(hltdc, framebuffer2, 0);
+    } else {
+        HAL_LTDC_SetAddress(hltdc, framebuffer1, 0);
     }
 }
 
