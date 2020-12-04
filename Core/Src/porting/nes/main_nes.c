@@ -8,7 +8,7 @@
 #include <nes_state.h>
 #include <nes_input.h>
 #include <osd.h>
-#include "buttons.h"
+#include "gw_buttons.h"
 #include "gw_lcd.h"
 #include "rom_info.h"
 
@@ -58,6 +58,16 @@ static bool netplay  = false;
 
 static bool fullFrame = 0;
 static uint frameTime = 0;
+
+static bool autoload = false;
+// TODO
+extern void store_save(uint8_t *data, size_t size);
+
+
+
+// if i counted correctly this should max be 23077
+char nes_save_buffer[24000];
+
 
 
 void odroid_display_force_refresh(void)
@@ -223,6 +233,12 @@ void osd_getinput(void)
             printf("Power PRESSED %d\n", power_pressed);
             HAL_SAI_DMAStop(&hsai_BlockA1);
 
+            if(!(buttons & B_PAUSE)) {
+                // Always save as long as PAUSE is not pressed
+                state_save(nes_save_buffer, 24000);
+                store_save(nes_save_buffer, 24000);
+            }
+
             HAL_Delay(500);
 
             // PIN1 = Power button
@@ -265,6 +281,12 @@ uint osd_getromcrc()
 void osd_loadstate()
 {
     frameTime = get_frame_time(nes_getptr()->refresh_rate);
+    if(autoload) {
+        autoload = false;
+        uint32_t address = 0x90F00000;
+        uint8_t *ptr = (uint8_t*)address;
+        state_load(ptr, 24000);
+    }
 }
 
 static bool SaveState(char *pathName)
@@ -277,10 +299,18 @@ static bool LoadState(char *pathName)
     return true;
 }
 
+
+
 int app_main(void)
 {
     odroid_system_init(APP_ID, AUDIO_SAMPLE_RATE);
     odroid_system_emu_init(&LoadState, &SaveState, NULL);
+
+    uint32_t buttons = buttons_get();
+    if(!(buttons & B_PAUSE)) {
+        // Always load the previous game except if pause is pressed
+        autoload = true;
+    }
 
     printf("app_main ROM: cart_rom_len=%ld\n", cart_rom_len);
 

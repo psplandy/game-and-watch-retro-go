@@ -79,6 +79,8 @@ MEMORY
   /* FLASH */
   FLASH    (xr ) : ORIGIN = 0x08000000, LENGTH =  128K
   EXTFLASH (xr ) : ORIGIN = 0x90000000, LENGTH = 1024K
+  /* Last megabyte is persistent storage for savegames */
+  SAVEFLASH(rw) : ORIGIN =  0x90F00000, LENGTH = 1024K
 }
 
 
@@ -113,6 +115,18 @@ SECTIONS
     _eram_data = .;
     . = ALIGN(4);
   } >RAM AT> EXTFLASH
+
+
+  ._saveflash :
+  {
+    . = ALIGN(4);
+    . = ALIGN(64K);
+    *(.saveflash_bank_1)
+    . = ALIGN(64K);
+    *(.saveflash_bank_2)
+    __saveflash_start__ = .;
+    *(.saveflash)
+  } > SAVEFLASH
 
   ._extflash :
   {
