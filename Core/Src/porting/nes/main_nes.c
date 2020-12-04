@@ -30,6 +30,12 @@ typedef enum {
 #error "Only supports LCD LUT8 mode."
 #endif
 
+#ifdef BLIT_NEAREST
+#define blit blit_nearest
+#else
+#define blit blit_normal
+#endif
+
 static uint32_t audioBuffer[AUDIO_BUFFER_LENGTH];
 static uint32_t audio_mute;
 
@@ -179,6 +185,47 @@ void osd_audioframe(int audioSamples)
     }
 }
 
+static inline void blit_normal(bitmap_t *bmp, uint8_t *framebuffer) {
+        // LCD is 320 wide, framebuffer is only 256
+    const int hpad = (WIDTH - NES_SCREEN_WIDTH) / 2;
+
+    for (int y = 0; y < bmp->height; y++) {
+        uint8_t *row = bmp->line[y];
+        uint32 *dest = NULL;
+        if(active_framebuffer == 0) {
+            dest = &framebuffer[WIDTH * y + hpad];
+        } else {
+            dest = &framebuffer[WIDTH * y + hpad];
+        }
+        memcpy(dest, row, bmp->width);
+    }
+}
+static inline void blit_nearest(bitmap_t *bmp, uint8_t *framebuffer) {
+    int w1 = bmp->width;
+    int h1 = bmp->height;
+    int w2 = 320;
+    int h2 = h1;
+
+    int x_ratio = (int)((w1<<16)/w2) +1;
+    int y_ratio = (int)((h1<<16)/h2) +1;
+    int hpad = 0;
+    int x2, y2 ;
+
+    // This could be faster:
+    // As we are only scaling on X all the Y stuff is not really
+    // required.
+
+    for (int i=0;i<h2;i++) {
+        for (int j=0;j<w2;j++) {
+            x2 = ((j*x_ratio)>>16) ;
+            y2 = ((i*y_ratio)>>16) ;
+            uint8_t *row = bmp->line[y2];
+            uint16_t b2 = row[x2];
+            framebuffer[(i*WIDTH)+j+hpad] = b2;
+        }
+    }
+}
+
 void osd_blitscreen(bitmap_t *bmp)
 {
     static uint32_t lastFPSTime = 0;
@@ -199,25 +246,16 @@ void osd_blitscreen(bitmap_t *bmp)
 
     lastTime = currentTime;
 
-    // LCD is 320 wide, framebuffer is only 256
-    const int hpad = (WIDTH - NES_SCREEN_WIDTH) / 2;
 
     // This takes less than 1ms
-    for (int y = 0; y < bmp->height; y++) {
-        uint8_t *row = bmp->line[y];
-        if(active_framebuffer == 0) {
-            uint32_t *dest = &framebuffer1[WIDTH * y + hpad];
-            memcpy(dest, row, bmp->width);
-        } else {
-            uint32_t *dest = &framebuffer2[WIDTH * y + hpad];
-            memcpy(dest, row, bmp->width);
-        }
-    }
     if(active_framebuffer == 0) {
+        blit(bmp, framebuffer1);
         active_framebuffer = 1;
     } else {
+        blit(bmp, framebuffer2);
         active_framebuffer = 0;
     }
+
     HAL_LTDC_Reload(&hltdc, LTDC_RELOAD_VERTICAL_BLANKING);
 }
 
