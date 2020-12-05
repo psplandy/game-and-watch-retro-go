@@ -49,6 +49,7 @@ static uint romCRC32;
 static int16_t pendingSamples = 0;
 static int16_t audiobuffer_emulator[AUDIO_BUFFER_LENGTH] __attribute__((section (".audio")));
 static int16_t audiobuffer_dma[AUDIO_BUFFER_LENGTH * 2] __attribute__((section (".audio")));
+static uint32_t dma_counter;
 static dma_transfer_state_t dma_state;
 
 extern SAI_HandleTypeDef hsai_BlockA1;
@@ -68,6 +69,7 @@ static bool netplay  = false;
 
 static bool fullFrame = 0;
 static uint frameTime = 0;
+static uint32_t vsync_wait_ms = 0;
 
 static bool autoload = false;
 static uint32_t active_framebuffer = 0;
@@ -126,6 +128,7 @@ void osd_wait_for_vsync()
 {
     static uint32_t skipFrames = 0;
     static uint32_t lastSyncTime = 0;
+    uint32_t t0;
 
     uint32_t elapsed = get_elapsed_time_since(lastSyncTime);
 
@@ -144,22 +147,27 @@ void osd_wait_for_vsync()
     nes_getptr()->drawframe = (skipFrames == 0);
 
     // Wait until the audio buffer has been transmitted
-    static dma_transfer_state_t last_dma_state = DMA_TRANSFER_STATE_HF;
-    while (dma_state == last_dma_state) {
+    static uint32_t last_dma_counter = 0;
+    t0 = get_elapsed_time();
+    while (dma_counter == last_dma_counter) {
         __WFI();
     }
-    last_dma_state = dma_state;
+    vsync_wait_ms += get_elapsed_time_since(t0);
+
+    last_dma_counter = dma_counter;
 
     lastSyncTime = get_elapsed_time();
 }
 
 void HAL_SAI_TxHalfCpltCallback(SAI_HandleTypeDef *hsai)
 {
+    dma_counter++;
     dma_state = DMA_TRANSFER_STATE_HF;
 }
 
 void HAL_SAI_TxCpltCallback(SAI_HandleTypeDef *hsai)
 {
+    dma_counter++;
     dma_state = DMA_TRANSFER_STATE_TC;
 }
 
@@ -238,9 +246,10 @@ void osd_blitscreen(bitmap_t *bmp)
 
     if (delta >= 1000) {
         int fps = (10000 * frames) / delta;
-        printf("FPS: %d.%d, frames %d, delta %d ms, skipped %d\n", fps / 10, fps % 10, delta, frames, skippedFrames);
+        printf("FPS: %d.%d, frames %d, delta %d ms, skipped %d, vsync_wait_ms %d\n", fps / 10, fps % 10, frames, delta, skippedFrames);
         frames = 0;
         skippedFrames = 0;
+        vsync_wait_ms = 0;
         lastFPSTime = currentTime;
     }
 
@@ -302,17 +311,7 @@ void osd_getinput(void)
                 store_save(nes_save_buffer, 24000);
             }
 
-            HAL_Delay(500);
-
-            // PIN1 = Power button
-            HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1_LOW);
-
-            HAL_PWR_EnterSTANDBYMode();
-
-            // Should never reach
-            while(1) {
-                __NOP();
-            }
+            GW_EnterDeepSleep();
         }
     }
 
@@ -359,7 +358,7 @@ static bool SaveState(char *pathName)
 
 static bool LoadState(char *pathName)
 {
-    return true;
+   return true;
 }
 
 
