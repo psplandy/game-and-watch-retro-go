@@ -164,7 +164,11 @@ void OSPI_BlockErase(OSPI_HandleTypeDef *hospi, uint32_t address)
   sCommand.SIOOMode              = HAL_OSPI_SIOO_INST_ONLY_FIRST_CMD;
   sCommand.InstructionDtrMode    = HAL_OSPI_INSTRUCTION_DTR_DISABLE;
 
-  set_cmd_lines(&sCommand, g_quad_mode, 1, 0);
+  if(g_quad_mode == HALF_QUAD_MODE) {
+    set_cmd_lines(&sCommand, SPI_MODE, 1, 0);
+  } else {
+    set_cmd_lines(&sCommand, g_quad_mode, 1, 0);
+  }
 
   if (HAL_OSPI_Command(hospi, &sCommand, HAL_OSPI_TIMEOUT_DEFAULT_VALUE) != HAL_OK)
   {
@@ -281,7 +285,11 @@ void OSPI_Read(OSPI_HandleTypeDef *hospi, uint32_t address, uint8_t *buffer, siz
 
 void  OSPI_NOR_WriteEnable(OSPI_HandleTypeDef *hospi)
 {
-  OSPI_WriteBytes(hospi, 0x06, 0, NULL, 0, g_quad_mode);
+  if(g_quad_mode == HALF_QUAD_MODE) {
+    OSPI_WriteBytes(hospi, 0x06, 0, NULL, 0, SPI_MODE);
+  } else {
+    OSPI_WriteBytes(hospi, 0x06, 0, NULL, 0, g_quad_mode);
+  }
 }
 
 
