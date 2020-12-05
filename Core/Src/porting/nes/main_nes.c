@@ -10,6 +10,7 @@
 #include <osd.h>
 #include "gw_buttons.h"
 #include "gw_lcd.h"
+#include "gw_linker.h"
 #include "rom_info.h"
 
 #define WIDTH  320
@@ -345,7 +346,13 @@ void osd_loadstate()
     frameTime = get_frame_time(nes_getptr()->refresh_rate);
     if(autoload) {
         autoload = false;
-        uint32_t address = 0x90F00000;
+        uint32_t save_size = &__SAVE_END__ - &__SAVE_START__;
+        if(save_size < 64 * 1024) {
+            // no save support
+            return;
+        }
+
+        uint32_t address = &__SAVE_START__;
         uint8_t *ptr = (uint8_t*)address;
         state_load(ptr, 24000);
     }
