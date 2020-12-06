@@ -233,7 +233,7 @@ int main(void)
   // Initialize the external flash
 
   // SPI_MODE or QUAD_MODE (IS25WP128F & co) or HALF_QUAD_MODE (MX25U8035F/Nintendo Stock Flash)
-  quad_mode_t quad_mode = QUAD_MODE;
+  quad_mode_t quad_mode = HALF_QUAD_MODE;
 
   OSPI_Init(&hospi1, quad_mode);
 
