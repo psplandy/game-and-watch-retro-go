@@ -27,15 +27,19 @@ typedef enum {
     DMA_TRANSFER_STATE_TC = 0x01,
 } dma_transfer_state_t;
 
-#ifndef GW_LCD_MODE_LUT8
-#error "Only supports LCD LUT8 mode."
-#endif
+// #ifndef GW_LCD_MODE_LUT8
+// #error "Only supports LCD LUT8 mode."
+// #endif
 
 #ifdef BLIT_NEAREST
 #define blit blit_nearest
+#elif BLIT_LINEAR
+#define blit blit_linear
 #else
 #define blit blit_normal
 #endif
+
+static uint16_t clut565[256];
 
 static uint32_t audioBuffer[AUDIO_BUFFER_LENGTH];
 static uint32_t audio_mute;
@@ -103,18 +107,25 @@ void osd_setpalette(rgb_t *pal)
 
     for (int i = 0; i < 64; i++)
     {
-        uint16_t c = (pal[i].b>>3) | ((pal[i].g>>2)<<5) | ((pal[i].r>>3)<<11);
+        uint16_t c = 
+            (((pal[i].b >> 3) & 0x1f)      ) |
+            (((pal[i].g >> 2) & 0x3f) <<  5) |
+            (((pal[i].r >> 3) & 0x1f) << 11);
 
         // The upper bits are used to indicate background and transparency.
         // They need to be indexed as well.
         clut[i]        = (pal[i].b) | (pal[i].g << 8) | (pal[i].r << 16);
         clut[i | 0x40] = (pal[i].b) | (pal[i].g << 8) | (pal[i].r << 16);
         clut[i | 0x80] = (pal[i].b) | (pal[i].g << 8) | (pal[i].r << 16);
+
+        clut565[i]        = c;
+        clut565[i | 0x40] = c;
+        clut565[i | 0x80] = c;
     }
 
     // Update the color-LUT in the LTDC peripheral
-    HAL_LTDC_ConfigCLUT(&hltdc, clut, 256, 0);
-    HAL_LTDC_EnableCLUT(&hltdc, 0);
+    // HAL_LTDC_ConfigCLUT(&hltdc, clut, 256, 0);
+    // HAL_LTDC_EnableCLUT(&hltdc, 0);
 
     // color 13 is "black". Makes for a nice border.
     memset(framebuffer1, 13, sizeof(framebuffer1));
@@ -194,21 +205,25 @@ void osd_audioframe(int audioSamples)
     }
 }
 
-static inline void blit_normal(bitmap_t *bmp, uint8_t *framebuffer) {
+static inline void blit_normal(bitmap_t *bmp, uint16_t *framebuffer) {
         // LCD is 320 wide, framebuffer is only 256
     const int hpad = (WIDTH - NES_SCREEN_WIDTH) / 2;
 
     for (int y = 0; y < bmp->height; y++) {
         uint8_t *row = bmp->line[y];
-        uint32 *dest = NULL;
+        uint16  *dest = NULL;
         if(active_framebuffer == 0) {
             dest = &framebuffer[WIDTH * y + hpad];
         } else {
             dest = &framebuffer[WIDTH * y + hpad];
         }
-        memcpy(dest, row, bmp->width);
+        for (int x = 0; x < bmp->width; x++) {
+            uint8_t c = row[x];
+            dest[x] = clut565[c];
+        }
     }
 }
+
 static inline void blit_nearest(bitmap_t *bmp, uint8_t *framebuffer) {
     int w1 = bmp->width;
     int h1 = bmp->height;
@@ -231,6 +246,78 @@ static inline void blit_nearest(bitmap_t *bmp, uint8_t *framebuffer) {
             uint8_t *row = bmp->line[y2];
             uint16_t b2 = row[x2];
             framebuffer[(i*WIDTH)+j+hpad] = b2;
+        }
+    }
+}
+
+static inline float lerp(float a, float b, float t)
+{
+    return a + (b - a) * t;
+}
+
+static inline uint16_t float_to_5b(float c)
+{
+    return ((uint16_t)c) & 0x1f;
+}
+
+static inline uint16_t float_to_6b(float c)
+{
+    return ((uint16_t)c) & 0x3f;
+}
+
+static inline uint16_t _lerp_rgb565(uint16_t r0, uint16_t g0, uint16_t b0, uint16_t r1, uint16_t g1, uint16_t b1, float t)
+{
+    return 
+        (float_to_5b(lerp(b0, b1, t))      ) |
+        (float_to_6b(lerp(g0, g1, t)) <<  5) |
+        (float_to_5b(lerp(r0, r1, t)) << 11);
+}
+
+static inline uint16_t lerp_rgb565(uint16_t c0, uint16_t c1, float t)
+{
+    return _lerp_rgb565(
+        ((c0 >> 11) & 0x1f),
+        ((c0 >>  5) & 0x3f),
+        ((c0      ) & 0x1f),
+        ((c1 >> 11) & 0x1f),
+        ((c1 >>  5) & 0x3f),
+        ((c1      ) & 0x1f),
+        t
+    );
+}
+
+static inline void blit_linear(bitmap_t *bmp, uint16_t *framebuffer) {
+    const int w1 = bmp->width;
+    const int h1 = bmp->height;
+    const int w2 = 307; // 256 + 256/5
+    const int h2 = h1;
+
+    const int x_ratio = (int)((w1<<16)/w2) +1;
+    const int y_ratio = (int)((h1<<16)/h2) +1;
+    const int hpad = (320 - w2) / 2;
+
+    float h_scale = (float)(w1) / w2;
+
+
+    for (int y = 0; y < h2; y++) {
+        uint8_t *row = bmp->line[y];
+        uint16  *dest = NULL;
+        if(active_framebuffer == 0) {
+            dest = &framebuffer[WIDTH * y + hpad];
+        } else {
+            dest = &framebuffer[WIDTH * y + hpad];
+        }
+        for (int x = 0; x < w2; x++) {
+            float gx = x * h_scale;
+            int gxi = (int)gx;
+
+            uint8_t *row = bmp->line[y];
+            uint8_t c1 = row[gxi];
+            uint8_t c2 = row[gxi + 1];
+
+            dest[x] = lerp_rgb565(clut565[c1], clut565[c2], gx - gxi);
+            // dest[x] = clut565[c1];
+            // framebuffer[(i*WIDTH)+j+hpad] = b2;
         }
     }
 }
